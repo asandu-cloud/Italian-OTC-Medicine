@@ -1,0 +1,15 @@
+# Project data
+medicinali/
+.cache/
+
+# Secrets
+.env
+
+# Large binary files
+*.zip
+*.npy
+*.idx
+
+# OS / editor junk
+.DS_Store
+*.swp
