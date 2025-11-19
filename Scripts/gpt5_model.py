@@ -890,20 +890,19 @@ iface.launch(share=True, debug=True)
 
 def answer_with_rag(question: str) -> dict:
     """
-    Run THIS notebook's RAG pipeline for a question.
-    Returns at least: answer text and context used.
+    Function for eval
     """
-    # 1) embed question
-    q_emb = embed_question(question)        # whatever you already use
+    # embed question
+    q_emb = embed_question(question)        
 
-    # 2) retrieve documents
+    # retrieve documents
     docs, scores = retrieve(q_emb, top_k=TOP_K)
 
-    # 3) build context string
+    # build context string
     context = "\n\n".join(d.page_content for d in docs)
 
-    # 4) generate answer
-    answer = generate_answer(question, context)  # your LLM call
+    # generate answer
+    answer = generate_answer(question, context)  
 
     return {
         "answer": answer,
