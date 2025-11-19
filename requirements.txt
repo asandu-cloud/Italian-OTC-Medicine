@@ -7,3 +7,5 @@ langchain-text-splitters
 faiss-cpu
 gradio
 ipykernel
+pathlib
+huggingface_hub==0.17.3
