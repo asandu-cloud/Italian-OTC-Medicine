@@ -136,10 +136,7 @@ def clean_text(text: str) -> str:
 print('Text cleaning func loaded')
 
 
-# ## 📄 Cella 6: Extraction PDF
-
-# In[9]:
-
+# Extraction PDF
 
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract clean text from PDF"""
