@@ -5,6 +5,7 @@ medicinali/
 # Secrets
 .env
 .venv/
+venv/
 # Large binary files
 *.zip
 *.npy
