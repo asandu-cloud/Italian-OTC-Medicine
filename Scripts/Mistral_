@@ -108,3 +108,41 @@ def extract_and_chunk_all_pdfs(config) -> List[Dict]:
                 })
     
     return all_chunks
+
+    # ==========================================
+# 2. GESTIONE EMBEDDINGS E INDICE
+# ==========================================
+
+def load_or_create_index(chunks):
+    """Carica o crea l'indice HNSWlib e gli embeddings"""
+    
+    # Carica modello embedding (su CPU per compatibilità)
+    print(f'📥 Caricamento modello embedding: {config.EMBEDDING_MODEL}')
+    embedder = SentenceTransformer(config.EMBEDDING_MODEL)
+    embedder.to('cpu')
+
+    if os.path.exists(config.EMBEDDINGS_FILE) and os.path.exists(config.IDX_CACHE):
+        print('📦 Caricamento indice dalla cache...')
+        embeddings = np.load(config.EMBEDDINGS_FILE)
+        
+        # Inizializza indice vuoto per poi caricarlo
+        dim = embeddings.shape[1]
+        index = hnswlib.Index(space='cosine', dim=dim)
+        index.load_index(config.IDX_CACHE, max_elements=embeddings.shape[0])
+    else:
+        print('🔄 Creazione nuovi embeddings...')
+        documents = [chunk['text'] for chunk in chunks]
+        embeddings = embedder.encode(documents, show_progress_bar=True, batch_size=config.BATCH_SIZE, device='cpu')
+        
+        # Crea indice HNSWlib
+        dim = embeddings.shape[1]
+        num_elements = len(documents)
+        index = hnswlib.Index(space='cosine', dim=dim)
+        index.init_index(max_elements=num_elements, ef_construction=200, M=16)
+        index.add_items(embeddings, np.arange(num_elements))
+        
+        # Salva
+        np.save(config.EMBEDDINGS_FILE, embeddings)
+        index.save_index(config.IDX_CACHE)
+        
+    return index, embedder
