@@ -217,17 +217,17 @@ def rag_chat_system():
     # 2. Prepare index
     index, embedder = load_or_create_index(chunks)
     
-    # 3. Carica LLM (solo se necessario, qui lo simuliamo per velocità o carichiamo davvero)
-    # Nota: scommenta le righe sotto per caricare davvero il modello (richiede GPU)
+    # 3. Load LLM (only if necessary, here we simulate for speed or really load)
+    # Note: uncomment the lines below to really load the model (requires GPU)
     # model, tokenizer = load_llm() 
-    print("✅ Sistema pronto! (Modalità retrieval-only per test)")
+    print("System ready! (Retrieval-only mode for testing)")
 
     print('\n' + '='*50)
-    print('💬 CHATBOT MEDICO AIFA - Scrivi "exit" per uscire')
+    print('💬 CHATBOT MEDICO AIFA - Type "exit" to quit')
     print('='*50)
 
     while True:
-        query = input('\n🙋 Tu: ').strip()
+        query = input('\n🙋 You: ').strip()
         if query.lower() in ['exit', 'quit']:
             break
             
@@ -235,7 +235,7 @@ def rag_chat_system():
         context_chunks = retrieve_context(query, index, chunks, embedder)
         
         if not context_chunks:
-            print("🤖 Assistente: Non ho trovato informazioni pertinenti nei documenti.")
+            print("🤖 Assistant: I couldn't find relevant information in the documents.")
             continue
             
         print(f"\n🔍 Trovati {len(context_chunks)} documenti rilevanti.")
