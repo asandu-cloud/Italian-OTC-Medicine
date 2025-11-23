@@ -238,13 +238,13 @@ def rag_chat_system():
             print("🤖 Assistant: I couldn't find relevant information in the documents.")
             continue
             
-        print(f"\n🔍 Trovati {len(context_chunks)} documenti rilevanti.")
+        print(f"\n Found {len(context_chunks)} relevant documents.")
         
-        # Qui normalmente passeremmo il contesto al LLM. 
-        # Per questo script, mostriamo il contenuto recuperato:
+        # Normally, we would pass the context to the LLM. 
+        # For this script, we show the retrieved content:
         best_match = context_chunks[0]
-        print(f"📄 Fonte: {best_match['document']}")
-        print(f"📝 Contenuto: {best_match['text'][:300]}...")
+        print(f"📄 Source: {best_match['document']}")
+        print(f"📝 Content: {best_match['text'][:300]}...")
 
 if __name__ == "__main__":
     rag_chat_system()
