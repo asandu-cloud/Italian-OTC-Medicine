@@ -248,3 +248,4 @@ def rag_chat_system():
 
 if __name__ == "__main__":
     rag_chat_system()
+    
