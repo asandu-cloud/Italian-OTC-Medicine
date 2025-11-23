@@ -146,3 +146,48 @@ def load_or_create_index(chunks):
         index.save_index(config.IDX_CACHE)
         
     return index, embedder
+
+    # ==========================================
+# 3. GESTIONE LLM (MISTRAL 7B)
+# ==========================================
+
+def load_llm():
+    """Carica il modello Mistral 7B quantizzato"""
+    print('🤖 Caricamento Mistral 7B...')
+    
+    quantization_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4"
+    )
+
+    model_name = "mistralai/Mistral-7B-Instruct-v0.2"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        quantization_config=quantization_config,
+        device_map="auto",
+        low_cpu_mem_usage=True
+    )
+    
+    return model, tokenizer
+
+def generate_response(model, tokenizer, prompt, max_tokens=512):
+    """Genera una risposta usando il modello caricato"""
+    messages = [{"role": "user", "content": prompt}]
+    formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
+
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_tokens,
+            temperature=0.7,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+    response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+    return response.strip()
