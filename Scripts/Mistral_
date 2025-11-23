@@ -12,7 +12,6 @@ from sentence_transformers import SentenceTransformer
 import hnswlib
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-# Filtra warning non necessari
 warnings.filterwarnings('ignore')
 
 # Configurazione Tesseract (se necessario su Windows)
