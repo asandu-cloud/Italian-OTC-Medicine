@@ -149,8 +149,8 @@ def load_or_create_index(chunks):
 # ==========================================
 
 def load_llm():
-    """Carica il modello Mistral 7B quantizzato"""
-    print('🤖 Caricamento Mistral 7B...')
+    """Upload the quantized Mistral 7B model"""
+    print('Loading Mistral 7B...')
     
     quantization_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -172,7 +172,7 @@ def load_llm():
     return model, tokenizer
 
 def generate_response(model, tokenizer, prompt, max_tokens=512):
-    """Genera una risposta usando il modello caricato"""
+    """Generate a response using the loaded model"""
     messages = [{"role": "user", "content": prompt}]
     formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
