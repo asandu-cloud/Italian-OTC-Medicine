@@ -45,13 +45,12 @@ config = Config()
 # Crea le cartelle se non esistono
 os.makedirs(config.CACHE_DIR, exist_ok=True)
 
-
 # ==========================================
-# 1. GESTIONE TESTO E PDF
+# 1. Text and PDF management
 # ==========================================
 
 def clean_text(text: str) -> str:
-    """Pulisce il testo rimuovendo caratteri non stampabili"""
+    """Cleans text by removing non-printable characters"""
     if not text or not isinstance(text, str):
         return ''
     cleaned = ''.join(c for c in text if c.isprintable() or c == '\n')
