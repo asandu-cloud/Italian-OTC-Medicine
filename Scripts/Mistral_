@@ -191,3 +191,63 @@ def generate_response(model, tokenizer, prompt, max_tokens=512):
 
     response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
     return response.strip()
+
+    # ==========================================
+# 4. SISTEMA RAG E MAIN
+# ==========================================
+
+def retrieve_context(query, index, chunks, embedder):
+    """Recupera i chunk più rilevanti per la query"""
+    query_vec = embedder.encode([query], device='cpu')
+    indices, distances = index.knn_query(query_vec, k=config.TOP_K)
+    
+    results = []
+    for idx, dist in zip(indices[0], distances[0]):
+        similarity = 1.0 - dist
+        if similarity >= config.SIMILARITY_THRESHOLD:
+            results.append(chunks[idx])
+    
+    return results
+
+def rag_chat_system():
+    """Funzione principale che avvia il sistema"""
+    
+    # 1. Carica dati
+    chunks = extract_and_chunk_all_pdfs(config)
+    if not chunks:
+        return
+        
+    # 2. Prepara indice
+    index, embedder = load_or_create_index(chunks)
+    
+    # 3. Carica LLM (solo se necessario, qui lo simuliamo per velocità o carichiamo davvero)
+    # Nota: scommenta le righe sotto per caricare davvero il modello (richiede GPU)
+    # model, tokenizer = load_llm() 
+    print("✅ Sistema pronto! (Modalità retrieval-only per test)")
+
+    print('\n' + '='*50)
+    print('💬 CHATBOT MEDICO AIFA - Scrivi "exit" per uscire')
+    print('='*50)
+
+    while True:
+        query = input('\n🙋 Tu: ').strip()
+        if query.lower() in ['exit', 'quit']:
+            break
+            
+        # Retrieval
+        context_chunks = retrieve_context(query, index, chunks, embedder)
+        
+        if not context_chunks:
+            print("🤖 Assistente: Non ho trovato informazioni pertinenti nei documenti.")
+            continue
+            
+        print(f"\n🔍 Trovati {len(context_chunks)} documenti rilevanti.")
+        
+        # Qui normalmente passeremmo il contesto al LLM. 
+        # Per questo script, mostriamo il contenuto recuperato:
+        best_match = context_chunks[0]
+        print(f"📄 Fonte: {best_match['document']}")
+        print(f"📝 Contenuto: {best_match['text'][:300]}...")
+
+if __name__ == "__main__":
+    rag_chat_system()
