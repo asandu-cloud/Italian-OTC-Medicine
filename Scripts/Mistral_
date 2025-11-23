@@ -84,15 +84,14 @@ def extract_and_chunk_all_pdfs(config) -> List[Dict]:
     )
 
     if not os.path.exists(config.PDF_FOLDER):
-        print(f"❌ Errore: La cartella {config.PDF_FOLDER} non esiste.")
+        print(f"❌ Error: The folder {config.PDF_FOLDER} does not exist.")
         return []
 
     pdf_files = [f for f in os.listdir(config.PDF_FOLDER) if f.endswith('.pdf')]
-    print(f'📚 Trovati {len(pdf_files)} PDF da processare')
-
+    print(f'📚 Found {len(pdf_files)} PDFs to process')
     all_chunks = []
     
-    for pdf_file in tqdm(pdf_files, desc='📄 Processamento PDF'):
+    for pdf_file in tqdm(pdf_files, desc='📄 Processing PDFs'):
         file_path = os.path.join(config.PDF_FOLDER, pdf_file)
         raw_text = extract_text_from_pdf(file_path)
 
@@ -107,8 +106,8 @@ def extract_and_chunk_all_pdfs(config) -> List[Dict]:
     
     return all_chunks
 
-    # ==========================================
-# 2. GESTIONE EMBEDDINGS E INDICE
+# ==========================================
+# 2. EMBEDDINGS AND INDEX MANAGEMENT
 # ==========================================
 
 def load_or_create_index(chunks):
