@@ -189,12 +189,12 @@ def generate_response(model, tokenizer, prompt, max_tokens=512):
     response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
     return response.strip()
 
-    # ==========================================
-# 4. SISTEMA RAG E MAIN
+# ==========================================
+# 4. RAG SYSTEM AND MAIN
 # ==========================================
 
 def retrieve_context(query, index, chunks, embedder):
-    """Recupera i chunk più rilevanti per la query"""
+    """Retrieve the most relevant chunks for the query"""
     query_vec = embedder.encode([query], device='cpu')
     indices, distances = index.knn_query(query_vec, k=config.TOP_K)
     
@@ -207,14 +207,14 @@ def retrieve_context(query, index, chunks, embedder):
     return results
 
 def rag_chat_system():
-    """Funzione principale che avvia il sistema"""
+    """Main function that starts the system"""
     
-    # 1. Carica dati
+    # 1. Load data
     chunks = extract_and_chunk_all_pdfs(config)
     if not chunks:
         return
         
-    # 2. Prepara indice
+    # 2. Prepare index
     index, embedder = load_or_create_index(chunks)
     
     # 3. Carica LLM (solo se necessario, qui lo simuliamo per velocità o carichiamo davvero)
