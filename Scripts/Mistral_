@@ -127,25 +127,25 @@ def load_or_create_index(chunks):
         index = hnswlib.Index(space='cosine', dim=dim)
         index.load_index(config.IDX_CACHE, max_elements=embeddings.shape[0])
     else:
-        print('🔄 Creazione nuovi embeddings...')
+        print('🔄 Creating new embeddings...')
         documents = [chunk['text'] for chunk in chunks]
         embeddings = embedder.encode(documents, show_progress_bar=True, batch_size=config.BATCH_SIZE, device='cpu')
         
-        # Crea indice HNSWlib
+        # Create HNSWlib index
         dim = embeddings.shape[1]
         num_elements = len(documents)
         index = hnswlib.Index(space='cosine', dim=dim)
         index.init_index(max_elements=num_elements, ef_construction=200, M=16)
         index.add_items(embeddings, np.arange(num_elements))
         
-        # Salva
+        # Save
         np.save(config.EMBEDDINGS_FILE, embeddings)
         index.save_index(config.IDX_CACHE)
         
     return index, embedder
 
-    # ==========================================
-# 3. GESTIONE LLM (MISTRAL 7B)
+# ==========================================
+# 3. LLM MANAGEMENT (MISTRAL 7B)
 # ==========================================
 
 def load_llm():
