@@ -18,7 +18,7 @@ warnings.filterwarnings('ignore')
 import pytesseract
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-print('✅ Librerie importate correttamente.')
+print('Libraries imported correctly')
 
 class Config:
     # TODO: Sarebbe meglio usare percorsi relativi o .env in futuro
