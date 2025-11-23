@@ -58,7 +58,7 @@ def clean_text(text: str) -> str:
     return cleaned.strip()
 
 def extract_text_from_pdf(pdf_path: str) -> str:
-    """Estrae testo pulito da un PDF."""
+    """Extracts clean text from a PDF."""
     try:
         reader = PdfReader(pdf_path)
         content = []
@@ -73,11 +73,11 @@ def extract_text_from_pdf(pdf_path: str) -> str:
                 continue
         return '\n'.join(content).strip()
     except Exception as e:
-        print(f'⚠️ Errore lettura PDF {pdf_path}: {e}')
+        print(f'⚠️ Error reading PDF {pdf_path}: {e}')
         return ''
 
 def extract_and_chunk_all_pdfs(config) -> List[Dict]:
-    """Estrae e divide in chunk tutti i PDF nella cartella configurata"""
+    """Extracts and chunks all PDFs in the configured folder"""
     chunker = RecursiveCharacterTextSplitter(
         chunk_size=config.CHUNK_SIZE,
         chunk_overlap=config.CHUNK_OVERLAP
