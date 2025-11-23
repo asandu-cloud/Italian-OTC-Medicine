@@ -1,0 +1,110 @@
+import os
+import re
+import pickle
+import warnings
+import numpy as np
+import torch
+from typing import List, Dict
+from tqdm.auto import tqdm
+from PyPDF2 import PdfReader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from sentence_transformers import SentenceTransformer
+import hnswlib
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+# Filtra warning non necessari
+warnings.filterwarnings('ignore')
+
+# Configurazione Tesseract (se necessario su Windows)
+import pytesseract
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+print('✅ Librerie importate correttamente.')
+
+class Config:
+    # TODO: Sarebbe meglio usare percorsi relativi o .env in futuro
+    PDF_FOLDER = r"C:\Users\gabri\Documents\Luiss\Luiss - Year Two\Advanced AI - LLM\Med M1\Medicinali Car"
+    CACHE_DIR = r"C:\Users\gabri\Documents\Luiss\Luiss - Year Two\Advanced AI - LLM\Med M1\rag_cache"
+    
+    # Nomi dei file di cache
+    EMBEDDINGS_FILE = os.path.join(CACHE_DIR, 'aifa_embeddings.npy')
+    CHUNKS_FILE = os.path.join(CACHE_DIR, 'chunks.pkl')
+    IDX_CACHE = os.path.join(CACHE_DIR, 'hnswlib_index.bin')
+
+    # Configurazioni modello e chunking
+    EMBEDDING_MODEL = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+    CHUNK_SIZE = 500
+    CHUNK_OVERLAP = 50
+
+    TOP_K = 10                  
+    SIMILARITY_THRESHOLD = 0.3
+    BATCH_SIZE = 32
+    VERBOSE = True
+
+config = Config()
+
+# Crea le cartelle se non esistono
+os.makedirs(config.CACHE_DIR, exist_ok=True)
+
+
+# ==========================================
+# 1. GESTIONE TESTO E PDF
+# ==========================================
+
+def clean_text(text: str) -> str:
+    """Pulisce il testo rimuovendo caratteri non stampabili"""
+    if not text or not isinstance(text, str):
+        return ''
+    cleaned = ''.join(c for c in text if c.isprintable() or c == '\n')
+    cleaned = ' '.join(cleaned.split())
+    return cleaned.strip()
+
+def extract_text_from_pdf(pdf_path: str) -> str:
+    """Estrae testo pulito da un PDF."""
+    try:
+        reader = PdfReader(pdf_path)
+        content = []
+        for page in reader.pages:
+            try:
+                text = page.extract_text()
+                if text and len(text.strip()) > 20:
+                    cleaned = clean_text(text)
+                    if cleaned:
+                        content.append(cleaned)
+            except:
+                continue
+        return '\n'.join(content).strip()
+    except Exception as e:
+        print(f'⚠️ Errore lettura PDF {pdf_path}: {e}')
+        return ''
+
+def extract_and_chunk_all_pdfs(config) -> List[Dict]:
+    """Estrae e divide in chunk tutti i PDF nella cartella configurata"""
+    chunker = RecursiveCharacterTextSplitter(
+        chunk_size=config.CHUNK_SIZE,
+        chunk_overlap=config.CHUNK_OVERLAP
+    )
+
+    if not os.path.exists(config.PDF_FOLDER):
+        print(f"❌ Errore: La cartella {config.PDF_FOLDER} non esiste.")
+        return []
+
+    pdf_files = [f for f in os.listdir(config.PDF_FOLDER) if f.endswith('.pdf')]
+    print(f'📚 Trovati {len(pdf_files)} PDF da processare')
+
+    all_chunks = []
+    
+    for pdf_file in tqdm(pdf_files, desc='📄 Processamento PDF'):
+        file_path = os.path.join(config.PDF_FOLDER, pdf_file)
+        raw_text = extract_text_from_pdf(file_path)
+
+        if raw_text and len(raw_text.strip()) > 100:
+            text_chunks = chunker.split_text(raw_text)
+            for idx, chunk_text in enumerate(text_chunks):
+                all_chunks.append({
+                    'text': chunk_text,
+                    'document': pdf_file,
+                    'chunk_id': f'{pdf_file}_{idx}'
+                })
+    
+    return all_chunks
