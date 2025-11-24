@@ -1,11 +1,32 @@
-openai
-python-dotenv
-numpy
-tqdm
-PyPDF2
-langchain-text-splitters
-faiss-cpu
-gradio
-ipykernel
-pathlib
-huggingface_hub==0.17.3
+# Core LLM clients
+openai>=1.40.0
+google-genai>=1.47.0
+
+# Environment & utilities
+python-dotenv>=1.0.1
+numpy>=1.26.0
+tqdm>=4.66.0
+pathlib>=1.0
+
+# PDF processing
+PyPDF2>=3.0.0
+
+# Text splitting
+langchain-text-splitters>=0.0.1
+
+# Vector store
+faiss-cpu>=1.7.4
+
+# Notebook support
+ipykernel>=6.29.0
+jupyter>=1.0.0
+
+# Web UIs
+# Gradio is intentionally pinned to a stable release compatible with huggingface-hub 0.20.3
+gradio==3.44.4
+
+# HuggingFace Hub version required by Gradio 3.x (includes HfFolder)
+huggingface_hub==0.20.3
+
+# Streamlit for the production UI
+streamlit>=1.39.0
