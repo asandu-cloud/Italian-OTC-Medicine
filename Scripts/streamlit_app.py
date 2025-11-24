@@ -5,16 +5,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
 
 import streamlit as st
-
-# === IMPORT YOUR RAG LOGIC HERE ============================================
-# Adjust "gemini3_model" to the actual module name where answer_question lives.
-# That module should contain the code you currently have in the notebook
-# (config, OpenAI embeddings, Gemini client, FAISS loading, etc.).
-
-from gemini3_model import answer_question  # type: ignore
-
-# If you want sidebar stats and you have these available, you can also import:
-# from gemini3_model import config, chunks, index  # type: ignore
+from gemini3_model import answer_question  
 
 
 # === STREAMLIT PAGE CONFIG ==================================================
@@ -33,7 +24,7 @@ st.write(
 )
 
 
-# === OPTIONAL SIDEBAR (if you import config/chunks/index) ===================
+# === OPTIONAL SIDEBAR ==================
 with st.sidebar:
     st.header("Impostazioni e informazioni")
     st.markdown(
@@ -60,7 +51,7 @@ for user_msg, bot_msg in st.session_state.chat_history:
 # === NEW USER INPUT ========================================================
 user_input = st.chat_input(
     "Scrivi qui la tua domanda sui medicinali OTC...",
-    key="otc_chat_input"  # unique key for this chat input
+    key="otc_chat_input"  
 )
 
 
