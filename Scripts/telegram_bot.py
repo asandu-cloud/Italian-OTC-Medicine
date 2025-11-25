@@ -139,7 +139,7 @@ def main():
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
 
-    print("Telegram bot running... Premi CTRL+C per fermarlo.")
+    print("Telegram bot running...")
     app.run_polling()
 
 

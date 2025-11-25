@@ -43,7 +43,7 @@ gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 class Config:
     # Paths (adjust as needed)
     PDF_FOLDER = ROOT / "medicinali"
-    CACHE_DIR  = ROOT / ".cache"  # hidden cache folder
+    CACHE_DIR  = ROOT / ".cache"  # hidden cache folder§
 
     # Models
     EMBEDDING_MODEL  = "text-embedding-3-small"  
