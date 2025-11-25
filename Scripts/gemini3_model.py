@@ -89,11 +89,6 @@ else:
     print("2) Check the path and case-sensitivity")
 
 
-# ## Cell 4: Import Libraries
-
-# In[34]:
-
-
 import os
 import pickle
 import numpy as np
@@ -106,10 +101,6 @@ import faiss  # provided by faiss-cpu
 
 
 print("Libraries imported (OpenAI, FAISS, PyPDF2, text splitters)")
-
-
-# In[35]:
-
 
 import os
 import pickle
