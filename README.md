@@ -26,30 +26,39 @@ Italian-OTC-Medicine/
 ├── .env                            # API keys and environment variables
 ├── requirements.txt                # Dependencies
 └── README.md                       # Project documentation
+```
 
 ## Installation
+```text
 git clone https://github.com/asandu-cloud/Italian-OTC-Medicine.git
 cd Italian-OTC-Medicine
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
+```
 
 ## Create your .env file:
-
+```text
 OPENAI_API_KEY=...
 GEMINI_API_KEY=...
 TELEGRAM_TOKEN=...
+```
 
 ## How to Run
-### Step 1 — Embed PDFs
+### Step 1 — Embed PDFs by running embedding.py script
+```text
 python Scripts/embedding.py
-
+```
 ## Step 2 — Launch Streamlit App
+```text
 ### streamlit run Scripts/streamlit_app.py
-
+```
 ## Step 3 — Start Telegram Bot
+```text
 ### python Scripts/telegram_bot.py
+```
 
 ## Step 4 — Run Model Evaluation
+```text
 ### python Scripts/quantitative_evaluation.py
+```
