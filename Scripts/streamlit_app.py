@@ -1,11 +1,19 @@
 import os
 import sys
+import streamlit as st
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
 
-import streamlit as st
-from gemini3_model import answer_question  
+
+@st.cache_resource
+def get_answer_function():
+    # import inside the cached function so that
+    # heavy initialization only runs once per process
+    from gemini3_model import answer_question
+    return answer_question
+
+answer_question = get_answer_function()
 
 
 # === STREAMLIT PAGE CONFIG ==================================================
