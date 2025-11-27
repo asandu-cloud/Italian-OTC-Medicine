@@ -1,5 +1,6 @@
 from pathlib import Path
 
+
 if "__file__" in globals():
     ROOT = Path(__file__).resolve().parent.parent
 else:
@@ -9,6 +10,7 @@ else:
 import os, pickle, numpy as np
 from tqdm.auto import tqdm
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+import time 
 
 import faiss
 faiss.omp_set_num_threads(1)  
@@ -184,9 +186,6 @@ def retrieve_relevant_chunks(
             print(f"- [{r['document']} - chunk {r['chunk_id']}] score={r['score']:.3f}")
 
     return results
-
-
-# In[37]:
 
 
 def retrieve_relevant_chunks(query, top_k=None, threshold=None, verbose=True):
@@ -420,23 +419,103 @@ print('\nPer avviare la chat, esegui: interactive_chat()')
 
 def answer_with_rag(question: str) -> dict:
     """
-    Function for eval
+    Wrapper used by quantitative_evaluation.py.
+
+    - Uses the same retrieval stack as `answer_question`
+    - Uses Gemini 3 for generation
+    - Returns timing + token-usage metrics in a format compatible with the evaluator.
     """
-    # embed question
-    q_emb = embed_question(question)        
+    t0 = time.perf_counter()
 
-    # retrieve documents
-    docs, scores = retrieve(q_emb, top_k=TOP_K)
+    # --- Retrieval timing ---
+    t_retrieval_start = time.perf_counter()
+    retrieved, scores_list = retrieve_relevant_chunks(
+        question,
+        top_k=config.TOP_K,
+        verbose=False
+    )
+    t_retrieval = time.perf_counter() - t_retrieval_start
 
-    # build context string
-    context = "\n\n".join(d.page_content for d in docs)
+    if not retrieved:
+        t_total = time.perf_counter() - t0
+        return {
+            "query": question,
+            "answer": "Non ho trovato contesto rilevante nei documenti.",
+            "sources": [],
+            "confidence": 0.0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "t_retrieval": t_retrieval,
+            "t_generation": 0.0,
+            "t_total": t_total,
+        }
 
-    # generate answer
-    answer = generate_answer(question, context)  
+    # --- Build context exactly like in answer_question() ---
+    context_blocks = []
+    for r in retrieved:
+        header = f"[{r['document']} - chunk {r['chunk_id']}]"
+        context_blocks.append(f"{header}\n{r['text']}")
+    context = "\n\n".join(context_blocks)
+
+    system_prompt = (
+        "Sei un assistente che risponde a domande sui farmaci da banco italiani "
+        "(OTC) usando solo le informazioni fornite nel contesto. "
+        "Se non trovi la risposta nel contesto, dichiara esplicitamente che non puoi rispondere."
+    )
+
+    full_prompt = (
+        f"Sistema:\n{system_prompt}\n\n"
+        f"Domanda attuale dell'utente: {question}\n\n"
+        f"Contesto estratto dai documenti:\n{context}\n\n"
+        "Rispondi in italiano, in modo conciso e preciso. Se la domanda non può essere "
+        "risolta usando solo il contesto fornito, dillo esplicitamente."
+    )
+
+    # --- Generation timing ---
+    t_gen_start = time.perf_counter()
+    gemini_response = gemini_client.models.generate_content(
+        model=config.GENERATION_MODEL,
+        contents=full_prompt
+    )
+    t_generation = time.perf_counter() - t_gen_start
+    t_total = time.perf_counter() - t0
+
+    answer = gemini_response.text
+
+    # --- Token usage (if provided by the Gemini client) ---
+    usage = getattr(gemini_response, "usage_metadata", None)
+    if usage is not None:
+        prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
+        completion_tokens = getattr(usage, "candidates_token_count", 0) or 0
+        total_tokens = getattr(usage, "total_token_count", 0) or (
+            prompt_tokens + completion_tokens
+        )
+    else:
+        # Fallback when usage metadata is missing
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+
+    # --- Confidence based on similarity scores ---
+    if scores_list:
+        avg_score = float(np.mean(scores_list))
+    else:
+        avg_score = 0.0
+
+    sources = list({r.get("document", "Sconosciuto") for r in retrieved})
 
     return {
+        "query": question,
         "answer": answer,
-        "context": context,
-        "scores": scores,
+        "sources": sources,
+        "confidence": avg_score,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "t_retrieval": t_retrieval,
+        "t_generation": t_generation,
+        "t_total": t_total,
     }
+
 
