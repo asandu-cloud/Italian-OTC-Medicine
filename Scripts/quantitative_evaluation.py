@@ -14,7 +14,8 @@ class RAGVariant:
     answer_fn: callable
 
 variants = [
-    RAGVariant("gpt5", gpt5_answer)
+    RAGVariant("gpt5", gpt5_answer),
+    RAGVariant("gpt4o",gpt4o_answer)
 ]
 
 def load_eval_questions():
