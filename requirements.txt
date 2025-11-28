@@ -13,3 +13,5 @@ gradio==3.44.4
 huggingface_hub==0.20.3
 streamlit>=1.39.0
 python-telegram-bot==21.7
+google
+pypdf

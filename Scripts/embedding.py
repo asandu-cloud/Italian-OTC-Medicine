@@ -1,89 +1,74 @@
 #!/usr/bin/env python
 """
-Script reads pdfs from medicinali
-Embeds all 
-Outputs to cache folder 
+Script reads JSON docs from kb_json
+Builds chunks
+Embeds all chunks with text-embedding-3-small
+Saves FAISS index + metadata in .cache/
 """
 
 from __future__ import annotations
 
 import os
+import json
 import pickle
 from pathlib import Path
 from typing import List, Dict
 
 import numpy as np
 from tqdm.auto import tqdm
-from PyPDF2 import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import faiss
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# ----------------- Paths & Config -----------------
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
-class Config:
-    PDF_FOLDER = PROJECT_ROOT / "medicinali"
-    CACHE_DIR  = PROJECT_ROOT / ".cache"
 
-    CHUNK_SIZE        = 700
-    CHUNK_OVERLAP     = 100
-    EMBEDDING_MODEL   = "text-embedding-3-small"
+class Config:
+    # Folder with JSON files created by your "extract_to_json" script
+    JSON_FOLDER = PROJECT_ROOT / "kb_json"
+
+    # Where to store FAISS index + embeddings + metadata
+    CACHE_DIR = PROJECT_ROOT / ".cache"
+
+    # Chunking
+    CHUNK_SIZE = 700
+    CHUNK_OVERLAP = 100
+
+    # Embedding model
+    EMBEDDING_MODEL = "text-embedding-3-small"
 
 
 config = Config()
 
-def clean_text(text: str) -> str:
-    """Cleans text by removing non-printable characters (from your notebook)."""
-    if not text or not isinstance(text, str):
-        return ''
-    cleaned = ''.join(c for c in text if c.isprintable() or c == '\n')
-    cleaned = ' '.join(cleaned.split())
-    return cleaned.strip()
 
-
-def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extract clean text from a single PDF (from your notebook)."""
-    try:
-        reader = PdfReader(pdf_path)
-        content = []
-        for page in reader.pages:
-            try:
-                text = page.extract_text()
-                if text and len(text.strip()) > 20:
-                    cleaned = clean_text(text)
-                    if cleaned:
-                        content.append(cleaned)
-            except Exception:
-                continue
-        return '\n'.join(content).strip()
-    except Exception as e:
-        print(f'PDF reading error for {pdf_path}: {e}')
-        return ''
+# ----------------- Chunk building from JSON -----------------
 
 def build_chunks(config: Config) -> List[Dict]:
     """
-    Read all PDFs in config.PDF_FOLDER and turn them into a list of
-    dicts: {"text": ..., "document": pdf_filename, "chunk_id": int}
+    Read all JSON files in config.JSON_FOLDER and turn them into a list of
+    dicts: {"text": ..., "document": filename, "chunk_id": int, "source": path}
     """
 
-    if not config.PDF_FOLDER.exists():
+    if not config.JSON_FOLDER.exists():
         raise FileNotFoundError(
-            f"PDF folder not found: {config.PDF_FOLDER}. "
-            "Create it and put your medicinali PDFs inside."
+            f"JSON folder not found: {config.JSON_FOLDER}. "
+            "Run your PDF→JSON extraction script first."
         )
 
-    pdf_files = sorted(
-        f for f in os.listdir(config.PDF_FOLDER)
-        if f.lower().endswith(".pdf")
+    json_files = sorted(
+        f for f in os.listdir(config.JSON_FOLDER)
+        if f.lower().endswith(".json")
     )
 
-    if not pdf_files:
-        raise RuntimeError(f"No PDFs found in {config.PDF_FOLDER}")
+    if not json_files:
+        raise RuntimeError(f"No JSON files found in {config.JSON_FOLDER}")
 
-    print(f"Found {len(pdf_files)} PDFs to process")
+    print(f"Found {len(json_files)} JSON docs to process")
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.CHUNK_SIZE,
@@ -93,18 +78,29 @@ def build_chunks(config: Config) -> List[Dict]:
     all_chunks: List[Dict] = []
     errors = 0
 
-    for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
-        file_path = config.PDF_FOLDER / pdf_file
-        raw_text = extract_text_from_pdf(str(file_path))
+    for json_file in tqdm(json_files, desc="Processing JSON docs"):
+        file_path = config.JSON_FOLDER / json_file
 
-        if not raw_text:
-            print(f"No valid text extracted from {pdf_file}, skipping.")
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"Error reading {json_file}: {e}")
+            errors += 1
+            continue
+
+        raw_text = data.get("text", "") or ""
+        filename = data.get("filename", json_file)
+        source_path = data.get("source_path", filename)
+
+        if not raw_text.strip():
+            print(f"No valid text in {json_file}, skipping.")
             errors += 1
             continue
 
         pieces = splitter.split_text(raw_text)
         if not pieces:
-            print(f"No chunks produced for {pdf_file}, skipping.")
+            print(f"No chunks produced for {json_file}, skipping.")
             errors += 1
             continue
 
@@ -112,16 +108,20 @@ def build_chunks(config: Config) -> List[Dict]:
             all_chunks.append(
                 {
                     "text": chunk,
-                    "document": pdf_file,
+                    "document": filename,   # original PDF name
                     "chunk_id": i,
+                    "source": source_path,  # path to original PDF (optional but useful)
                 }
             )
 
     print(f"\nChunking done:")
     print(f"  - Total chunks: {len(all_chunks)}")
-    print(f"  - PDFs with issues: {errors}")
+    print(f"  - JSON files with issues: {errors}")
 
     return all_chunks
+
+
+# ----------------- Embedding -----------------
 
 def embed_texts(
     texts: List[str],
@@ -145,17 +145,19 @@ def embed_texts(
     return embeddings
 
 
-def build_and_save_index(config: Config) -> None:
+# ----------------- Build index & save to .cache -----------------
 
+def build_and_save_index(config: Config) -> None:
     env_path = PROJECT_ROOT / ".env"
     if env_path.exists():
         load_dotenv(env_path)
+
     client = OpenAI()
 
-    # checks for cache dir 
+    # checks for cache dir
     config.CACHE_DIR.mkdir(exist_ok=True)
 
-    # chunk building
+    # chunk building from JSON
     chunks = build_chunks(config)
     texts = [c["text"] for c in chunks]
 
@@ -172,8 +174,8 @@ def build_and_save_index(config: Config) -> None:
     print(f"FAISS index ready → {index.ntotal} vectors, dim={dim}")
 
     # save to cache
-    emb_cache  = config.CACHE_DIR / "embeddings.npy"
-    idx_cache  = config.CACHE_DIR / "faiss_index.idx"
+    emb_cache = config.CACHE_DIR / "embeddings.npy"
+    idx_cache = config.CACHE_DIR / "faiss_index.idx"
     meta_cache = config.CACHE_DIR / "metadata.pkl"
 
     np.save(emb_cache, embeddings)
@@ -182,6 +184,9 @@ def build_and_save_index(config: Config) -> None:
         pickle.dump(chunks, f)
 
     print("\nSaved all in .cache:")
+    print(f"  - {emb_cache}")
+    print(f"  - {idx_cache}")
+    print(f"  - {meta_cache}")
 
 
 if __name__ == "__main__":

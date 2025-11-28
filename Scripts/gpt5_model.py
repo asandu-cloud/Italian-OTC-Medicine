@@ -341,7 +341,7 @@ def answer_question(
                     "Contesto (estratti dai documenti):\n"
                     f"{context}\n\n"
                     "Rispondi in italiano, in modo conciso e preciso. "
-                    "Se necessario, cita i nomi dei foglietti illustrativi. "
+                    "Se necessario, cita i nomi dei foglietti illustrativi."
                     "Se la domanda si basa su informazioni non presenti nel contesto, dillo esplicitamente."
                 ),
             }

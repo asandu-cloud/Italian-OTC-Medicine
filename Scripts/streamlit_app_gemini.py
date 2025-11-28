@@ -6,12 +6,13 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
 
 
-@st.cache_resource
+# @st.cache_resource
 def get_answer_function():
     # import inside the cached function so that
     # heavy initialization only runs once per process
     from gemini3_model import answer_question
     return answer_question
+
 
 answer_question = get_answer_function()
 

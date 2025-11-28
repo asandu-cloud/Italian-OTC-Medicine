@@ -57,7 +57,7 @@ class Config:
 
     # Retrieval
     TOP_K = 5
-    SIMILARITY_THRESHOLD = 0.3
+    SIMILARITY_THRESHOLD = 0.0
 
     # Batching
     BATCH_SIZE = 64
@@ -134,11 +134,6 @@ print("  chunks:", len(chunks))
 print("  example chunk keys:", chunks[0].keys())
 
 
-# ## Cell 10: Retrieval function
-
-# In[36]:
-
-
 def embed_query(query: str) -> np.ndarray:
     """Return a normalized embedding vector (1, D) for the query."""
     resp = openai_client.embeddings.create(model=config.EMBEDDING_MODEL, input=[query])
@@ -150,26 +145,46 @@ def embed_query(query: str) -> np.ndarray:
 def retrieve_relevant_chunks(
     query: str,
     top_k: int = None,
-    threshold: float = None,
+    threshold: float = None,  # unused, kept for compatibility
     verbose: bool = True,
 ):
+    """
+    1) Normal FAISS retrieval with document diversity.
+    2) If the query explicitly mentions brand names (Moment, Tachipirina, etc.),
+       force in at least one chunk that contains each brand in its text.
+    """
     if top_k is None:
         top_k = config.TOP_K
-    if threshold is None:
-        threshold = config.SIMILARITY_THRESHOLD
 
-    q_vec = embed_query(query)
-    distances, indices = index.search(q_vec, top_k)
+    # ---- 1) FAISS + diversity ----
+    initial_k = max(top_k * 4, 20)
+    q_vec = embed_query(query)  # (1, D), normalized
+    distances, indices = index.search(q_vec, initial_k)
 
-    results = []
-    for rank, (score, idx) in enumerate(zip(distances[0], indices[0]), start=1):
+    max_per_doc = 3
+    grouped = {}  # doc -> list[(score, idx)]
+
+    for score, idx in zip(distances[0], indices[0]):
         if idx == -1:
             continue
-        if threshold is not None and score < threshold:
-            continue
-
         meta = chunks[idx]
+        doc = meta["document"]
+        if doc not in grouped:
+            grouped[doc] = []
+        if len(grouped[doc]) < max_per_doc:
+            grouped[doc].append((float(score), idx))
 
+    flat = []
+    for doc, items in grouped.items():
+        for score, idx in items:
+            flat.append((score, idx))
+
+    flat.sort(key=lambda x: x[0], reverse=True)
+
+    results = []
+    scores = []
+    for rank, (score, idx) in enumerate(flat[:top_k], start=1):
+        meta = chunks[idx]
         results.append(
             {
                 "rank": rank,
@@ -179,65 +194,77 @@ def retrieve_relevant_chunks(
                 "chunk_id": meta["chunk_id"],
             }
         )
+        scores.append(float(score))
+
+    # ---- 2) Brand-name safety net ----
+    q_lower = query.lower()
+
+    # crude brand detection: capitalized tokens in original query
+        # brand detection: use all non-trivial tokens in lowercase
+    brand_candidates = set()
+    for token in query.replace("?", " ").replace(",", " ").split():
+        cleaned = token.strip("?.!,").lower()
+        if cleaned and len(cleaned) > 3:  # ignore "e", "tra", "le", etc.
+            brand_candidates.add(cleaned)
+
+
+    # e.g. "Differenze tra Moment e Tachipirina"
+    #  -> {"moment", "tachipirina"}
+
+    for brand in brand_candidates:
+        # already have this brand in retrieved text?
+        if any(brand in r["text"].lower() for r in results):
+            continue
+
+        # find best chunks that mention this brand
+        candidates = []
+        for idx, meta in enumerate(chunks):
+            if brand in meta["text"].lower():
+                s = float(embeddings[idx] @ q_vec[0])  # approximate score
+                candidates.append((s, idx))
+
+        if not candidates:
+            continue
+
+        candidates.sort(key=lambda x: x[0], reverse=True)
+
+        # take the best candidate not already present
+        for s, idx in candidates[:3]:
+            meta = chunks[idx]
+            if any(
+                meta["document"] == r["document"]
+                and meta["chunk_id"] == r["chunk_id"]
+                for r in results
+            ):
+                continue
+
+            results.append(
+                {
+                    "rank": None,
+                    "score": float(s),
+                    "text": meta["text"],
+                    "document": meta["document"],
+                    "chunk_id": meta["chunk_id"],
+                }
+            )
+            scores.append(float(s))
+            break  # one chunk per brand is enough
+
+    # ---- 3) Final sort and re-rank ----
+    results.sort(key=lambda r: r["score"], reverse=True)
+    results = results[:top_k]
+    for i, r in enumerate(results, start=1):
+        r["rank"] = i
+    scores = [r["score"] for r in results]
 
     if verbose:
-        print(f"\nRetrieved {len(results)} chunks:")
+        print(f"\nRetrieved {len(results)} chunks (TOP_K={top_k}, initial_k={initial_k}):")
         for r in results:
             print(f"- [{r['document']} - chunk {r['chunk_id']}] score={r['score']:.3f}")
 
-    return results
-
-
-def retrieve_relevant_chunks(query, top_k=None, threshold=None, verbose=True):
-    """
-    Retrieves relevant chunks using OpenAI embeddings + FAISS.
-    Includes safety guards for FAISS crashes on Apple Silicon.
-    """
-    if top_k is None:
-        top_k = config.TOP_K
-    if threshold is None:
-        threshold = config.SIMILARITY_THRESHOLD
-
-    # Ensure FAISS index and chunks exist
-    if 'index' not in globals() or getattr(index, "ntotal", 0) == 0:
-        raise RuntimeError("FAISS index not loaded. Run embedding generation or ensure_faiss_ready().")
-    if 'chunks' not in globals() or not chunks:
-        raise RuntimeError("Chunks not loaded. Run the PDF→chunk cell.")
-
-    # Get embedding from OpenAI
-    resp = openai_client.embeddings.create(model=config.EMBEDDING_MODEL, input=query)
-    qe = np.array(resp.data[0].embedding, dtype=np.float32)
-    qe = np.expand_dims(qe, axis=0)
-    faiss.normalize_L2(qe)
-
-    # Double-check dimensionality
-    if qe.shape[1] != index.d:
-        raise RuntimeError(
-            f"Embedding dimension mismatch: query={qe.shape[1]}, index={index.d}. "
-            "Rebuild the FAISS index with the same embedding model."
-        )
-
-    # Create a *copy* of the array to avoid FAISS segfaults on MPS
-    qe = np.ascontiguousarray(qe)
-
-    # Try search safely
-    try:
-        distances, indices = index.search(qe, top_k)
-    except Exception as e:
-        raise RuntimeError(f"FAISS search failed: {e}")
-
-    results, scores = [], []
-    for idx, score in zip(indices[0], distances[0]):
-        if score >= threshold:
-            results.append(chunks[idx])
-            scores.append(float(score))
-
-    if verbose:
-        print(f"Found {len(results)}/{top_k} relevant chunks (≥ {threshold})")
-
     return results, scores
 
-print("Stable retrieval function loaded for OpenAI + FAISS on CPU")
+
 
 
 def format_history(history, max_turns: int = 5) -> str:
@@ -274,12 +301,19 @@ def answer_question(
         verbose=verbose
     )
 
-    if not retrieved:
+        # Decide if context is actually meaningful
+    best_score = max(scores_list) if scores_list else 0.0
+    MIN_BEST_SCORE = 0.03  # or 0.1 if you want to be stricter
+
+    if not retrieved or best_score < MIN_BEST_SCORE:
         return {
             "query": query,
-            "answer": "Non ho trovato contesto rilevante nei documenti.",
+            "answer": (
+                "Non ho trovato contesto sufficientemente rilevante nei documenti "
+                "per rispondere con sicurezza."
+            ),
             "sources": [],
-            "confidence": 0.0,
+            "confidence": float(best_score),
         }
 
     # Build context block from retrieved chunks
@@ -436,13 +470,23 @@ def answer_with_rag(question: str) -> dict:
     )
     t_retrieval = time.perf_counter() - t_retrieval_start
 
-    if not retrieved:
+    # --- Decide if the retrieved context is meaningful enough ---
+    # We always get top-k chunks from retrieve_relevant_chunks, so we
+    # gate on the *quality* of the best score, not on the presence of chunks.
+    MIN_BEST_SCORE = 0.05  # you can tune this (e.g. 0.05–0.10)
+
+    best_score = max(scores_list) if scores_list else 0.0
+
+    if (not retrieved) or (best_score < MIN_BEST_SCORE):
         t_total = time.perf_counter() - t0
         return {
             "query": question,
-            "answer": "Non ho trovato contesto rilevante nei documenti.",
+            "answer": (
+                "Non ho trovato contesto sufficientemente rilevante nei documenti "
+                "per rispondere con sicurezza."
+            ),
             "sources": [],
-            "confidence": 0.0,
+            "confidence": float(best_score),
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
@@ -497,19 +541,20 @@ def answer_with_rag(question: str) -> dict:
         completion_tokens = 0
         total_tokens = 0
 
-    # --- Confidence based on similarity scores ---
+    # --- Confidence metric based on similarity scores ---
     if scores_list:
         avg_score = float(np.mean(scores_list))
     else:
         avg_score = 0.0
 
+    # Unique list of source documents
     sources = list({r.get("document", "Sconosciuto") for r in retrieved})
 
     return {
         "query": question,
         "answer": answer,
         "sources": sources,
-        "confidence": avg_score,
+        "confidence": avg_score,         # you could also store best_score here if you prefer
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "total_tokens": total_tokens,
@@ -517,5 +562,3 @@ def answer_with_rag(question: str) -> dict:
         "t_generation": t_generation,
         "t_total": t_total,
     }
-
-

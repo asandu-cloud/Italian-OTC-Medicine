@@ -3,8 +3,8 @@ from pathlib import Path
 import pandas as pd
 
 from Scripts.gpt4o_model import answer_with_rag as gpt4o_answer
-from Scripts.gpt-5.1_model import answer_with_rag as gpt5.1_answer 
-from Scripts.gemini3_model import answer_with_rag as gemini.answer
+from Scripts.gpt5_model import answer_with_rag as gpt5_answer
+from Scripts.gemini3_model import answer_with_rag as gemini_answer
 from Scripts.metrics import similarity_to_reference
 
 EVAL_FILE = Path("eval_questions.csv")   # id;question;reference_answer;category
@@ -15,9 +15,9 @@ class RAGVariant:
     answer_fn: callable
 
 variants = [
-    RAGVariant('gemini', gemini.answer),
+    RAGVariant('gemini', gemini_answer),
     RAGVariant("gpt4o",gpt4o_answer),
-    RAGVariant("gpt-5.1",gpt5.1_answer), 
+    RAGVariant("gpt-5.1",gpt5_answer), 
 ]
 
 def load_eval_questions():
