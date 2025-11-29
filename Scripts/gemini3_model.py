@@ -342,8 +342,18 @@ def answer_question(
         f"{history_section}"
         f"Domanda attuale dell'utente: {query}\n\n"
         f"Contesto estratto dai documenti:\n{context}\n\n"
-        "Rispondi in italiano, in modo conciso e preciso. Se la domanda non può essere "
-        "risolta usando solo il contesto fornito, dillo esplicitamente."
+        "1. Rispondi in italiano, in modo conciso e preciso.\n"
+        "2. Prima di affermare che la domanda non può essere risolta con il contesto, "
+        "verifica se il contesto contiene:\n"
+        "   - sinonimi,\n"
+        "   - parafrasi,\n"
+        "   - variazioni morfologiche,\n"
+        "   - termini correlati semanticamente\n"
+        "   dei concetti presenti nella domanda.\n"
+        "3. Usa queste equivalenze lessicali per verificare se il contesto fornisce "
+        "comunque una risposta, anche indirettamente.\n"
+        "4. Solo se dopo questa verifica non trovi informazioni rilevanti, dì "
+        "esplicitamente che la domanda non può essere risolta usando solo il contesto fornito.\n"
     )
 
     # Call Gemini for generation
@@ -507,8 +517,19 @@ def answer_with_rag(question: str) -> dict:
         f"Sistema:\n{system_prompt}\n\n"
         f"Domanda attuale dell'utente: {question}\n\n"
         f"Contesto estratto dai documenti:\n{context}\n\n"
-        "Rispondi in italiano, in modo conciso e preciso. Se la domanda non può essere "
-        "risolta usando solo il contesto fornito, dillo esplicitamente."
+        "Istruzioni:\n"
+        "1. Rispondi in italiano, in modo conciso e preciso.\n"
+        "2. Prima di affermare che la domanda non può essere risolta con il contesto, "
+        "verifica se il contesto contiene:\n"
+        "   - sinonimi,\n"
+        "   - parafrasi,\n"
+        "   - variazioni morfologiche,\n"
+        "   - termini correlati semanticamente\n"
+        "   dei concetti presenti nella domanda.\n"
+        "3. Usa queste equivalenze lessicali per verificare se il contesto fornisce "
+        "comunque una risposta, anche indirettamente.\n"
+        "4. Solo se dopo questa verifica non trovi informazioni rilevanti, dì "
+        "esplicitamente che la domanda non può essere risolta usando solo il contesto fornito.\n"
     )
 
     # --- Generation timing ---
