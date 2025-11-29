@@ -1,25 +1,22 @@
 from pathlib import Path
 
-# Robust project root: works both as notebook-converted .py and imported module
+
 if "__file__" in globals():
-    # Running as a .py file (e.g. Notebooks/gpt4o_model.py)
-    ROOT = Path(__file__).resolve().parent.parent  
+    ROOT = Path(__file__).resolve().parent.parent
 else:
-    # Running from inside the Notebooks/ folder in Jupyter
-    ROOT = Path.cwd().resolve().parent             
-
-load_dotenv(ROOT / ".env")
-
+    # If inside a notebook
+    ROOT = Path.cwd().resolve()
 
 import os, pickle, numpy as np
 from tqdm.auto import tqdm
-from PyPDF2 import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+import time 
 
 import faiss
 faiss.omp_set_num_threads(1)  
 
 print("Imports OK (FAISS, NumPy, PyPDF2)")
+
 
 # === OpenAI RAG Config (OpenAI-only) ===
 import os
@@ -30,14 +27,19 @@ warnings.filterwarnings('ignore')
 from openai import OpenAI
 from pathlib import Path
 from dotenv import load_dotenv
+from google import genai
 
 load_dotenv(ROOT/'.env')
 
 # ---- API key / client ----
 if not os.getenv("OPENAI_API_KEY"):
-    raise RuntimeError("OPENAI_API_KEY non trovato nell'ambiente. Imposta la variabile e riestheseegui la cella.")
+    raise RuntimeError("OPENAI_API_KEY not found in environment. Set it in your .env file and rerun cell")
 
-client = OpenAI()  
+if not os.getenv("GOOGLE_API_KEY"):
+    raise RuntimeError("OPENAI_API_KEY not found in environment. Set it in your .env file and rerun cell")
+
+openai_client = OpenAI()
+client = OpenAI()
 
 # ---- Config ----
 class Config:
@@ -54,7 +56,7 @@ class Config:
 
     # Retrieval
     TOP_K = 5
-    SIMILARITY_THRESHOLD = 0.3
+    SIMILARITY_THRESHOLD = 0.15
 
     # Batching
     BATCH_SIZE = 64
@@ -86,6 +88,11 @@ else:
     print('2) Controlla il percorso (maiuscole/minuscole contano)')
 
 
+# ## Cell 4: Import Libraries
+
+# In[4]:
+
+
 import os
 import pickle
 import numpy as np
@@ -98,6 +105,9 @@ import faiss  # provided by faiss-cpu
 
 
 print("Libraries imported (OpenAI, FAISS, PyPDF2, text splitters)")
+
+
+# In[5]:
 
 
 import os
@@ -128,6 +138,11 @@ print("  embeddings:", embeddings.shape)
 print("  index ntotal:", index.ntotal)
 print("  chunks:", len(chunks))
 print("  example chunk keys:", chunks[0].keys())
+
+
+# ## Cell 10: Retrieval function
+
+# In[6]:
 
 
 def embed_query(query: str) -> np.ndarray:
@@ -178,56 +193,135 @@ def retrieve_relevant_chunks(
 
     return results
 
-def retrieve_relevant_chunks(query, top_k=None, threshold=None, verbose=True):
+
+# In[7]:
+
+
+def retrieve_relevant_chunks(
+    query: str,
+    top_k: int = None,
+    threshold: float = None,  # unused, kept for compatibility
+    verbose: bool = True,
+):
     """
-    Retrieves relevant chunks using OpenAI embeddings + FAISS.
-    Includes safety guards for FAISS crashes on Apple Silicon.
+    1) FAISS retrieval with document diversity.
+    2) If the query explicitly mentions brand names (Moment, Tachipirina, etc.),
+       force in at least one chunk that contains each brand in its text.
     """
     if top_k is None:
         top_k = config.TOP_K
-    if threshold is None:
-        threshold = config.SIMILARITY_THRESHOLD
 
-    # Ensure FAISS index and chunks exist
-    if 'index' not in globals() or getattr(index, "ntotal", 0) == 0:
-        raise RuntimeError("FAISS index not loaded. Run embedding generation or ensure_faiss_ready().")
-    if 'chunks' not in globals() or not chunks:
-        raise RuntimeError("Chunks not loaded. Run the PDF→chunk cell.")
+    # ---- 1) FAISS + diversity ----
+    initial_k = max(top_k * 4, 20)
+    q_vec = embed_query(query)  # (1, D), normalized
+    distances, indices = index.search(q_vec, initial_k)
 
-    # Get embedding from OpenAI
-    resp = client.embeddings.create(model=config.EMBEDDING_MODEL, input=query)
-    qe = np.array(resp.data[0].embedding, dtype=np.float32)
-    qe = np.expand_dims(qe, axis=0)
-    faiss.normalize_L2(qe)
+    max_per_doc = 3
+    grouped = {}  # doc -> list[(score, idx)]
 
-    # Double-check dimensionality
-    if qe.shape[1] != index.d:
-        raise RuntimeError(
-            f"Embedding dimension mismatch: query={qe.shape[1]}, index={index.d}. "
-            "Rebuild the FAISS index with the same embedding model."
+    for score, idx in zip(distances[0], indices[0]):
+        if idx == -1:
+            continue
+        meta = chunks[idx]
+        doc = meta["document"]
+        if doc not in grouped:
+            grouped[doc] = []
+        if len(grouped[doc]) < max_per_doc:
+            grouped[doc].append((float(score), idx))
+
+    flat = []
+    for doc, items in grouped.items():
+        for score, idx in items:
+            flat.append((score, idx))
+
+    flat.sort(key=lambda x: x[0], reverse=True)
+
+    results = []
+    scores = []
+    for rank, (score, idx) in enumerate(flat[:top_k], start=1):
+        meta = chunks[idx]
+        results.append(
+            {
+                "rank": rank,
+                "score": float(score),
+                "text": meta["text"],
+                "document": meta["document"],
+                "chunk_id": meta["chunk_id"],
+            }
         )
+        scores.append(float(score))
 
-    # Create a *copy* of the array to avoid FAISS segfaults on MPS
-    qe = np.ascontiguousarray(qe)
+    # ---- 2) Brand-name safety net ----
+    q_lower = query.lower()
 
-    # Try search safely
-    try:
-        distances, indices = index.search(qe, top_k)
-    except Exception as e:
-        raise RuntimeError(f"FAISS search failed: {e}")
+    # crude brand detection: capitalized tokens in original query
+    brand_candidates = set()
+    for token in query.replace("?", " ").replace(",", " ").split():
+        cleaned = token.strip("?.!,").lower()
+        if cleaned and len(cleaned) > 3:  # ignore "e", "tra", "le", etc.
+            brand_candidates.add(cleaned)
 
-    results, scores = [], []
-    for idx, score in zip(indices[0], distances[0]):
-        if score >= threshold:
-            results.append(chunks[idx])
-            scores.append(float(score))
+
+    # e.g. "Differenze tra Moment e Tachipirina"
+    #  -> {"moment", "tachipirina"}
+
+    for brand in brand_candidates:
+        # already have this brand in retrieved text?
+        if any(brand in r["text"].lower() for r in results):
+            continue
+
+        candidates = []
+        for idx, meta in enumerate(chunks):
+            if brand in meta["text"].lower():
+                # approximate score via dot product with query embedding
+                s = float(embeddings[idx] @ q_vec[0])
+                candidates.append((s, idx))
+
+        if not candidates:
+            continue
+
+        candidates.sort(key=lambda x: x[0], reverse=True)
+
+        # take the best candidate not already present
+        for s, idx in candidates[:3]:
+            meta = chunks[idx]
+            if any(
+                meta["document"] == r["document"]
+                and meta["chunk_id"] == r["chunk_id"]
+                for r in results
+            ):
+                continue
+
+            results.append(
+                {
+                    "rank": None,
+                    "score": float(s),
+                    "text": meta["text"],
+                    "document": meta["document"],
+                    "chunk_id": meta["chunk_id"],
+                }
+            )
+            scores.append(float(s))
+            break  # one per brand is enough
+
+    # ---- 3) Final sort + re-rank ----
+    results.sort(key=lambda r: r["score"], reverse=True)
+    results = results[:top_k]
+    for i, r in enumerate(results, start=1):
+        r["rank"] = i
+    scores = [r["score"] for r in results]
 
     if verbose:
-        print(f"Found {len(results)}/{top_k} relevant chunks (≥ {threshold})")
+        print(f"\nRetrieved {len(results)} chunks (TOP_K={top_k}, initial_k={initial_k}):")
+        for r in results:
+            print(f"- [{r['document']} - chunk {r['chunk_id']}] score={r['score']:.3f}")
 
     return results, scores
 
-print("Stable retrieval function loaded for OpenAI + FAISS on CPU")
+
+# ## Cell 12: Response system (Extractive QA)
+
+# In[8]:
 
 
 def format_history(history, max_turns: int = 5) -> str:
@@ -252,117 +346,75 @@ def answer_question(
     if top_k is None:
         top_k = config.TOP_K
 
-    retrieved = retrieve_relevant_chunks(query, top_k=top_k, verbose=verbose)
+    # --- Retrieval ---
+    retrieved, scores_list = retrieve_relevant_chunks(
+        query,
+        top_k=top_k,
+        verbose=verbose
+    )
 
-    # --- NEW: normalize retrieved items to dicts ---
-    normalized = []
-    for item in retrieved:
-        # Case 1: already a dict -> keep as is
-        if isinstance(item, dict):
-            normalized.append(item)
-            continue
+    # Decide if context is actually meaningful
+    best_score = max(scores_list) if scores_list else 0.0
+    MIN_BEST_SCORE = 0.03  # tune if needed
 
-        # Case 2: list/tuple like [text, meta_dict, score] or similar
-        if isinstance(item, (list, tuple)):
-            meta = None
-            text = None
-            score = None
-
-            for elem in item:
-                if isinstance(elem, dict) and "document" in elem:
-                    meta = elem
-                elif isinstance(elem, str):
-                    text = elem
-                elif isinstance(elem, (int, float)):
-                    score = float(elem)
-
-            if meta is not None:
-                normalized.append({
-                    "document": meta.get("document", ""),
-                    "chunk_id": meta.get("chunk_id", -1),
-                    "text": text if text is not None else meta.get("text", ""),
-                    "score": score if score is not None else float(meta.get("score", 0.0)),
-                })
-            continue
-
-        # Anything else we just ignore
-        # (shouldn't happen in your pipeline)
-        continue
-
-    retrieved = normalized
-    # --- END NEW BLOCK ---
-
-    if not retrieved:
+    if not retrieved or best_score < MIN_BEST_SCORE:
         return {
             "query": query,
-            "answer": "Non ho trovato contesto rilevante nei documenti.",
+            "answer": (
+                "Non ho trovato contesto sufficientemente rilevante nei documenti "
+                "per rispondere con sicurezza."
+            ),
             "sources": [],
-            "confidence": 0.0,
+            "confidence": float(best_score),
         }
 
-    # Build context string for the LLM
+    # --- Build context block from retrieved chunks ---
     context_blocks = []
     for r in retrieved:
         header = f"[{r['document']} - chunk {r['chunk_id']}]"
         context_blocks.append(f"{header}\n{r['text']}")
     context = "\n\n".join(context_blocks)
 
-    # === SESSION MEMORY ===
+    # --- Session memory ---
     history_text = format_history(chat_history) if chat_history else ""
-
     if history_text:
         history_section = f"Storia della conversazione (ultimi turni):\n{history_text}\n\n"
     else:
         history_section = ""
 
-
-    # --- rest of your existing code stays the same ---
     system_prompt = (
-        "Sei un assistente che risponde a domande su farmaci da banco italiani "
+        "Sei un assistente che risponde a domande sui farmaci da banco italiani "
         "(OTC) usando solo le informazioni fornite nel contesto. "
         "Se non trovi la risposta nel contesto, dichiara esplicitamente che non puoi rispondere."
     )
 
-    messages = [
-    {
-        "role": "system",
-        "content": [
-            {"type": "input_text", "text": system_prompt},
-        ],
-    },
-    {
-        "role": "user",
-        "content": [
-            {
-                "type": "input_text",
-                "text": (
-                    f"{history_section}"
-                    f"Domanda attuale: {query}\n\n"
-                    "Contesto (estratti dai documenti):\n"
-                    f"{context}\n\n"
-                    "Rispondi in italiano, in modo conciso e preciso. "
-                    "Se necessario, cita i nomi dei foglietti illustrativi."
-                    "Se la domanda si basa su informazioni non presenti nel contesto, dillo esplicitamente."
-                ),
-            }
-        ],
-    },
-]
-
-
-
-    resp = client.responses.create(
-        model=config.GENERATION_MODEL,
-        input=messages,
-        max_output_tokens=600,
-        temperature=0.2,
+    user_content = (
+        f"{history_section}"
+        f"Domanda attuale dell'utente: {query}\n\n"
+        f"Contesto estratto dai documenti:\n{context}\n\n"
+        "Rispondi in italiano, in modo conciso e preciso. Se la domanda non può essere "
+        "risolta usando solo il contesto fornito, dillo esplicitamente."
     )
-    answer = resp.output[0].content[0].text if hasattr(resp, "output") else resp.choices[0].message.content
 
-    scores = [r["score"] for r in retrieved]
-    avg_score = float(np.mean(scores))
+    # --- GPT-4o generation ---
+    resp = openai_client.chat.completions.create(
+        model=config.GENERATION_MODEL,  # e.g. "gpt-4o-mini" or "gpt-4o"
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.1,
+    )
 
-    sources = list({r["document"] for r in retrieved})
+    answer = resp.choices[0].message.content
+
+    # --- Confidence based on similarity scores ---
+    if scores_list:
+        avg_score = float(np.mean(scores_list))
+    else:
+        avg_score = float(np.mean([r.get("score", 0.0) for r in retrieved]))
+
+    sources = list({r.get("document", "Sconosciuto") for r in retrieved})
 
     return {
         "query": query,
@@ -372,13 +424,84 @@ def answer_question(
         "retrieved_chunks": retrieved,
     }
 
+
+# ## Cell 14: Interactive Chat 
+# 
+# **Use:**
+# - Ask questions in natural language
+# - Type 'exit' or 'quit' to exit 
+# - Type 'stats' to view system stats 
+
+# In[9]:
+
+
+def interactive_chat():
+    """Interactive RAG Chat using OpenAI"""
+    print('\n' + '='*60)
+    print('CHAT INTERATTIVA RAG (OpenAI)')
+    print('='*60)
+    print('\nComandi:')
+    print('  - exit / quit : esci dalla chat')
+    print('  - stats       : mostra statistiche del sistema')
+    print('='*60 + '\n')
+
+    query_count = 0
+
+    while True:
+        try:
+            user_input = input('Tu: ').strip()
+            if not user_input:
+                continue
+
+            # Exit command
+            if user_input.lower() in ['exit', 'quit']:
+                print('\nArrivederci!')
+                break
+
+            # Stats command
+            elif user_input.lower() == 'stats':
+                print(f'\nSystem stats:')
+                print(f'  - Queries made: {query_count}')
+                print(f'  - Total chunks: {len(chunks):,}')
+                print(f'  - Documents: {len(set(c.get("document","?") for c in chunks))}')
+                print(f'  - Index size: {index.ntotal:,} vectors')
+                continue
+
+            # Normal question
+            query_count += 1
+            print("\nRunning...\n")
+
+            result = answer_question(user_input, verbose=False)
+
+            print('Assistente:')
+            print('-'*60)
+            print(result['answer'])
+            print('-'*60)
+
+            if result['sources']:
+                src = result['sources'][0]
+                print(f"Fonte principale: {src['document']} (similarità: {src['score']:.0%})")
+
+            print()
+
+        except KeyboardInterrupt:
+            print('\n\nUscita manuale. A presto!')
+            break
+        except Exception as e:
+            print(f'\nErrore: {e}\n')
+
+print('Chat pronta!')
+print('\nPer avviare la chat, esegui: interactive_chat()')
+
 def answer_with_rag(question: str) -> dict:
     """
-    Wrapper used by quantitative_evaluation.py.
+    Used for quantitative_evaluation.
 
-    - Uses the same retrieval stack as `answer_question`
-    - GPT5.1 for generation
-    - Returns timing + token-usage metrics in a format compatible with the evaluator.
+    Single-shot RAG call:
+    - retrieve chunks with FAISS
+    - build context
+    - generate answer with OpenAI
+    - return answer + basic metrics (timings, tokens, similarity scores)
     """
     t0 = time.perf_counter()
 
@@ -391,13 +514,20 @@ def answer_with_rag(question: str) -> dict:
     )
     t_retrieval = time.perf_counter() - t_retrieval_start
 
-    if not retrieved:
+    MIN_BEST_SCORE = 0.05
+    best_score = max(scores_list) if scores_list else 0.0
+
+    # If retrieval is too weak, bail out early
+    if (not retrieved) or (best_score < MIN_BEST_SCORE):
         t_total = time.perf_counter() - t0
         return {
             "query": question,
-            "answer": "Non ho trovato contesto rilevante nei documenti.",
+            "answer": (
+                "Non ho trovato contesto sufficientemente rilevante nei documenti "
+                "per rispondere con sicurezza."
+            ),
             "sources": [],
-            "confidence": 0.0,
+            "confidence": float(best_score),
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
@@ -406,7 +536,7 @@ def answer_with_rag(question: str) -> dict:
             "t_total": t_total,
         }
 
-    # --- Build context exactly like in answer_question() ---
+    # --- Build context (same style as answer_question) ---
     context_blocks = []
     for r in retrieved:
         header = f"[{r['document']} - chunk {r['chunk_id']}]"
@@ -419,8 +549,7 @@ def answer_with_rag(question: str) -> dict:
         "Se non trovi la risposta nel contesto, dichiara esplicitamente che non puoi rispondere."
     )
 
-    full_prompt = (
-        f"Sistema:\n{system_prompt}\n\n"
+    user_content = (
         f"Domanda attuale dell'utente: {question}\n\n"
         f"Contesto estratto dai documenti:\n{context}\n\n"
         "Rispondi in italiano, in modo conciso e preciso. Se la domanda non può essere "
@@ -429,42 +558,46 @@ def answer_with_rag(question: str) -> dict:
 
     # --- Generation timing ---
     t_gen_start = time.perf_counter()
-    gemini_response = gemini_client.models.generate_content(
+    resp = openai_client.chat.completions.create(
         model=config.GENERATION_MODEL,
-        contents=full_prompt
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.1,
     )
     t_generation = time.perf_counter() - t_gen_start
     t_total = time.perf_counter() - t0
 
-    answer = gemini_response.text
+    answer = resp.choices[0].message.content
 
-    # --- Token usage (if provided by the Gemini client) ---
-    usage = getattr(gemini_response, "usage_metadata", None)
+    # --- Token usage (if available) ---
+    usage = getattr(resp, "usage", None)
     if usage is not None:
-        prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
-        completion_tokens = getattr(usage, "candidates_token_count", 0) or 0
-        total_tokens = getattr(usage, "total_token_count", 0) or (
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+        total_tokens = getattr(usage, "total_tokens", 0) or (
             prompt_tokens + completion_tokens
         )
     else:
-        # Fallback when usage metadata is missing
         prompt_tokens = 0
         completion_tokens = 0
         total_tokens = 0
 
-    # --- Confidence based on similarity scores ---
+    # --- Confidence metric based on similarity scores ---
     if scores_list:
         avg_score = float(np.mean(scores_list))
     else:
         avg_score = 0.0
 
+    # Unique list of source documents
     sources = list({r.get("document", "Sconosciuto") for r in retrieved})
 
     return {
         "query": question,
         "answer": answer,
         "sources": sources,
-        "confidence": avg_score,
+        "confidence": avg_score,   # you could also store best_score instead
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "total_tokens": total_tokens,

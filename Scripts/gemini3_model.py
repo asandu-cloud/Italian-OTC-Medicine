@@ -199,7 +199,6 @@ def retrieve_relevant_chunks(
     # ---- 2) Brand-name safety net ----
     q_lower = query.lower()
 
-    # crude brand detection: capitalized tokens in original query
         # brand detection: use all non-trivial tokens in lowercase
     brand_candidates = set()
     for token in query.replace("?", " ").replace(",", " ").split():
@@ -453,11 +452,7 @@ print('\nPer avviare la chat, esegui: interactive_chat()')
 
 def answer_with_rag(question: str) -> dict:
     """
-    Wrapper used by quantitative_evaluation.py.
-
-    - Uses the same retrieval stack as `answer_question`
-    - Uses Gemini 3 for generation
-    - Returns timing + token-usage metrics in a format compatible with the evaluator.
+    Used for quantitative_evaluation
     """
     t0 = time.perf_counter()
 

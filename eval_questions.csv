@@ -1,0 +1,11 @@
+id;question;reference_answer;category
+1;"Qual è la dose massima giornaliera di Tachipirina 1000 mg per un adulto?";"REFERENCE TBD";simple
+2;"Posso prendere Moment a stomaco vuoto o è meglio assumerlo dopo i pasti?";"REFERENCE TBD";simple
+3;"Quali sono gli effetti indesiderati più comuni riportati nel foglietto illustrativo di Oki?";"REFERENCE TBD";simple
+4;"Quanto dura l’effetto analgesico di Nurofen secondo il foglietto?";"REFERENCE TBD";simple
+5;"Qual è la dose consigliata di Brufen Analgesico per il dolore da ciclo?";"REFERENCE TBD";simple
+6;"Xamamina indica un tempo di insorgenza dell’effetto diverso tra compresse e gomme da masticare?";"REFERENCE TBD";complex
+7;"Reactine può ridurre la capacità di guidare? È indicato il livello di rischio?";"REFERENCE TBD";complex
+8;"Cosa dice il foglietto di Vicks Vaporub sul rischio di broncospasmo nei bambini sotto i 6 anni?";"REFERENCE TBD";complex
+9;"Secondo il foglietto, Bisolvon può peggiorare i sintomi se assunto poco prima di dormire?";"REFERENCE TBD";complex
+10;"Cosa dice il foglio illustrativo di Fluimucil sull’interazione tra acetilcisteina e antibiotici (es. tetracicline)?";"REFERENCE TBD";complex
