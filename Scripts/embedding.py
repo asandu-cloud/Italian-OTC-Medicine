@@ -1,11 +1,4 @@
 #!/usr/bin/env python
-"""
-Script reads JSON docs from kb_json
-Builds chunks
-Embeds all chunks with text-embedding-3-small
-Saves FAISS index + metadata in .cache/
-"""
-
 from __future__ import annotations
 
 import os
