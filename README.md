@@ -19,7 +19,8 @@ Italian-OTC-Medicine/
 │   ├── telegram_bot.py             # Telegram bot running Gemini RAG
 │   ├── quantitative_evaluation.py  # Evaluation pipeline for all models
 │   ├── metrics.py                  # Computes evaluation metrics
-│   └── scrap_for_gpt_script.py     # Utility script (WIP)
+│   ├── gpt4o_model.py              # Python script version of gpt4o model. Used only for the quantitative evaluation
+│   ├── gpt5_model.py               # Python script version of gpt5 model. Used only for the quantitative evaluation and the telegram bot.
 │
 ├── .cache/                         # Shared hidden cache (embeddings, FAISS index)
 ├── .venv/                          # Virtual environment (not tracked)
@@ -41,24 +42,30 @@ pip install -r requirements.txt
 ```text
 OPENAI_API_KEY=...
 GEMINI_API_KEY=...
-TELEGRAM_TOKEN=...
 ```
 
 ## How to Run
-### Step 1 — Embed PDFs by running embedding.py script
+### Embed PDFs by running embedding.py script
 ```text
+Content of PDFs used for KB are stored under the kb_json folder.
 python Scripts/embedding.py
 ```
-## Step 2 — Launch Streamlit App
+## For GPT4o, GPT5 and Mistral
 ```text
-### streamlit run Scripts/streamlit_app.py
+Run respective notebooks 
+- GPT4o -> gpt4o_model.ipynb
+- GPT5.1 -> gpt5_model.ipynb
+- Mistral PM -> Mistal PM.ipynb
+
+Before running Mistral run clear_cache.py due to conflicting embedding
+After running Mistral run clear_cache.py again followed by embedding.py
 ```
-## Step 3 — Start Telegram Bot
+## Gemini 
 ```text
-### python Scripts/telegram_bot.py
+python Scripts/streamlit_app_gemini.py
 ```
 
 ## Step 4 — Run Model Evaluation
 ```text
-### python Scripts/quantitative_evaluation.py
+python Scripts/quantitative_evaluation.py
 ```
